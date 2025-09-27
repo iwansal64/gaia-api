@@ -1,10 +1,10 @@
 #[macro_use] extern crate rocket;
 
 use std::env;
-use gaia_api::{routes, types::WebSocketManager, websocket};
+use gaia_api::routes;
 use dotenvy::dotenv;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
-use tokio::spawn;
+use rocket_cors::{AllowedOrigins, CorsOptions};
 
  
 fn setup_logger() -> Result<(), fern::InitError> {
@@ -31,6 +31,11 @@ async fn rocket() -> _ {
     // Initializions
     dotenv().ok();
     setup_logger().expect("There's an error when trying to setup logger");
+    let cors = CorsOptions::default()
+        .allowed_origins(AllowedOrigins::all()) // allow any origin
+        .allow_credentials(true)
+        .to_cors()
+        .expect("Error creating CORS");
     
     // Connect to PostgreSQL
     let pool: Result<sqlx::Pool<sqlx::Postgres>, sqlx::Error> = PgPoolOptions::new()
@@ -50,31 +55,9 @@ async fn rocket() -> _ {
         }
     };
 
-    let ws_manager: WebSocketManager = WebSocketManager::new();
-
-    let ws_manager_instance: WebSocketManager = ws_manager.clone();
-    let pool_instance: Pool<Postgres> = pool.clone();
-    let ws_manager_instance_2: WebSocketManager = ws_manager.clone();
-    spawn(async move {
-        tokio::select! {
-            _ = websocket::core::run_websocket_server(ws_manager_instance, pool_instance) => (),
-            _ = tokio::signal::ctrl_c() => {
-                let shutdown_result = ws_manager_instance_2.shutdown().await;
-                match shutdown_result {
-                    Ok(_) => (),
-                    Err(err) => {
-                        log::error!("There's an error when shutting down all of the websocket connection. Error: {}", err.to_string());
-                    }
-                }
-            }
-        }
-    });
-    
     rocket::build()
         // Setting up postgresql pool for database connection
         .manage(pool)
-        // Setting up web socket manager for web socket connection
-        .manage(ws_manager)
         // Konfigurasi rocket
         .configure(
             rocket::Config::figment()
@@ -106,4 +89,5 @@ async fn rocket() -> _ {
             routes::catchers::unauthorized,
             routes::catchers::too_many_requests
         ])
+        .attach(cors)
 }

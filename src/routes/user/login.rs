@@ -40,7 +40,8 @@ pub async fn post(credentials: Json<LoginRequest>, db: &State<Pool<Postgres>>, c
     let user_data = match user_data {
         Some(data) => data,
         None => {
-            return Err(Status::NotFound);
+            log::error!("No User: {}", credentials.username);
+            return Err(Status::Unauthorized);
         }
     };
 
